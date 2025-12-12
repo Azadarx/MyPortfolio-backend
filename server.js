@@ -87,10 +87,13 @@ app.options("*", cors(corsOptions));
 // ========================================
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      callback(null, true);           // allow ALL origins
+    },
     methods: ["GET", "POST"],
-    credentials: true
-  },
+    credentials: false                // required when allowing all origins
+  }
+
   path: '/socket.io/',
   transports: ["websocket"],  
   allowUpgrades: true,
