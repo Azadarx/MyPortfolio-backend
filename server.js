@@ -58,9 +58,11 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    const isAllowed = allowedOrigins.some(o =>
-      origin === o || origin.startsWith(o.replace("https://", "").split(".")[0])
-    );
+    const isAllowed =
+  allowedOrigins.includes(origin) ||
+  origin.endsWith(".vercel.app") ||
+  origin.includes("vercel.app");
+
 
     if (isAllowed) {
       callback(null, true);
