@@ -1,4 +1,4 @@
-// server.js - Fixed CORS configuration
+// server.js - Fixed version
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -21,12 +21,18 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
-// FIXED CORS configuration - Allow your Vercel deployment
-const allowedOrigins = process.env.ALLOWED_ORIGINS.split(",").map(o => o.trim());
+// Parse ALLOWED_ORIGINS safely
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(",").map(o => o.trim()).filter(Boolean);
 
+// Add fallback if no origins configured
+if (allowedOrigins.length === 0) {
+  allowedOrigins.push('http://localhost:5173', 'http://localhost:3000');
+  console.warn('Warning: No ALLOWED_ORIGINS configured, using defaults');
+}
 
 const corsOptions = {
   origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -35,18 +41,25 @@ const corsOptions = {
       callback(new Error("Not allowed by CORS"));
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 };
+
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
-// Socket.IO config
+// Socket.IO config with fixed CORS
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
+    methods: ["GET", "POST"],
     credentials: true
   },
-  transports: ["websocket", "polling"]
+  path: '/socket.io/',  // Explicit path
+  transports: ["websocket", "polling"],
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 // Store connected clients
@@ -54,7 +67,7 @@ const clients = new Set();
 
 // Socket.IO for real-time updates
 io.on("connection", (socket) => {
-  console.log("Socket.IO client connected:", socket.id);
+  console.log("✓ Socket.IO client connected:", socket.id);
   clients.add(socket);
 
   // Join analytics room for real-time updates
@@ -75,11 +88,6 @@ io.on("connection", (socket) => {
     clients.delete(socket);
   });
 });
-
-// Function to broadcast to all clients
-const broadcastToClients = (event, data) => {
-  io.emit(event, { event, data });
-};
 
 // Make io available to routes
 app.set("io", io);
@@ -130,6 +138,7 @@ const initializeServer = async () => {
       res.json({ 
         status: "OK", 
         database: "PostgreSQL",
+        socketConnected: io.engine.clientsCount,
         timestamp: new Date().toISOString() 
       });
     });
@@ -139,7 +148,17 @@ const initializeServer = async () => {
       res.json({ 
         message: "Portfolio Backend API",
         status: "Running",
-        version: "1.0.0"
+        version: "1.0.0",
+        endpoints: [
+          "/api/auth",
+          "/api/projects",
+          "/api/skills",
+          "/api/contact",
+          "/api/stats",
+          "/api/analytics",
+          "/api/blog",
+          "/api/chatbot"
+        ]
       });
     });
 
@@ -162,13 +181,23 @@ const initializeServer = async () => {
     app.use("/api/*", (req, res) => {
       res.status(404).json({ 
         message: "API endpoint not found",
-        path: req.path 
+        path: req.path,
+        availableEndpoints: [
+          "/api/auth",
+          "/api/projects",
+          "/api/skills",
+          "/api/contact",
+          "/api/stats",
+          "/api/analytics",
+          "/api/blog",
+          "/api/chatbot"
+        ]
       });
     });
 
     console.log("All routes mounted successfully");
   } catch (error) {
-    console.error("Server setup failed:", error.message, error.code, error.stack);
+    console.error("Server setup failed:", error.message, error.stack);
     console.error("Please ensure PostgreSQL is running and credentials are correct");
     process.exit(1);
   }
@@ -184,6 +213,7 @@ initializeServer()
       console.log(`Server running on port ${PORT}`);
       console.log("Database: PostgreSQL");
       console.log("Allowed origins:", allowedOrigins);
+      console.log("Socket.IO path: /socket.io/");
       console.log("Available API endpoints:");
       console.log("- /api/auth/* - Authentication");
       console.log("- /api/projects/* - Projects CRUD");
@@ -196,7 +226,7 @@ initializeServer()
     });
   })
   .catch((error) => {
-    console.error("Failed to initialize server:", error.message, error.code, error.stack);
+    console.error("Failed to initialize server:", error.message, error.stack);
     console.error("Check PostgreSQL connection and database configuration");
     process.exit(1);
   });
