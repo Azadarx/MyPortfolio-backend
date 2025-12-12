@@ -1,4 +1,4 @@
-// server.js - Fixed version
+// server.js - Complete fixed version
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -6,85 +6,94 @@ import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import http from "http";
 import { Server } from "socket.io";
-import errorHandler from "./middleware/errorHandler.js";
 import { fileURLToPath } from "url";
+
+// Load environment variables FIRST
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Custom modules
 import { initDatabase, createInitialAdmin } from "./server/db.js";
-
-// Load environment variables
-dotenv.config();
+import errorHandler from "./middleware/errorHandler.js";
 
 const app = express();
 const server = http.createServer(app);
 
-// Parse ALLOWED_ORIGINS safely
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(",").map(o => o.trim()).filter(Boolean);
+// ========================================
+// CORS Configuration
+// ========================================
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(",")
+  .map(o => o.trim())
+  .filter(Boolean);
 
-// Add fallback if no origins configured
+// Add fallback origins
 if (allowedOrigins.length === 0) {
   allowedOrigins.push('http://localhost:5173', 'http://localhost:3000');
-  console.warn('Warning: No ALLOWED_ORIGINS configured, using defaults');
+  console.warn('⚠️ No ALLOWED_ORIGINS configured, using defaults');
 }
+
+console.log('🌐 Allowed CORS Origins:', allowedOrigins);
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
+    
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.log("Blocked origin:", origin);
+      console.log("❌ Blocked origin:", origin);
       callback(new Error("Not allowed by CORS"));
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400 // 24 hours
 };
 
+// Apply CORS
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
-// Socket.IO config with fixed CORS
+// ========================================
+// Socket.IO Configuration
+// ========================================
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
     credentials: true
   },
-  path: '/socket.io/',  // Explicit path
+  path: '/socket.io/',
   transports: ["websocket", "polling"],
   pingTimeout: 60000,
-  pingInterval: 25000
+  pingInterval: 25000,
+  maxHttpBufferSize: 1e6,
+  allowEIO3: true
 });
 
-// Store connected clients
+// Track connected clients
 const clients = new Set();
 
-// Socket.IO for real-time updates
 io.on("connection", (socket) => {
-  console.log("✓ Socket.IO client connected:", socket.id);
+  console.log("✅ Socket client connected:", socket.id);
   clients.add(socket);
 
-  // Join analytics room for real-time updates
   socket.join("analytics");
   socket.join("chatbot");
 
-  socket.on("message", (message) => {
-    console.log("Received message:", message);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("Socket.IO client disconnected:", socket.id);
+  socket.on("disconnect", (reason) => {
+    console.log("🔌 Socket client disconnected:", socket.id, "-", reason);
     clients.delete(socket);
   });
 
   socket.on("error", (error) => {
-    console.error("Socket.IO error:", error);
+    console.error("❌ Socket error:", error);
     clients.delete(socket);
   });
 });
@@ -92,28 +101,34 @@ io.on("connection", (socket) => {
 // Make io available to routes
 app.set("io", io);
 
+// ========================================
 // Middleware
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+// ========================================
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-// Add request logging
+// Request logging
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path} - Origin: ${req.headers.origin}`);
+  console.log(`📨 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'No origin'}`);
   next();
 });
 
+// ========================================
+// Initialize Server
+// ========================================
 const initializeServer = async () => {
-  console.log("Initializing PostgreSQL database...");
+  console.log("🔧 Initializing PostgreSQL database...");
+  
   try {
     await initDatabase();
-    console.log("PostgreSQL database initialized successfully");
+    console.log("✅ Database initialized");
     
-    console.log("Creating initial admin user...");
     await createInitialAdmin();
-    console.log("Initial admin user setup complete");
+    console.log("✅ Admin user setup complete");
 
-    // Dynamically import route modules
-    console.log("Mounting routes...");
+    // Import and mount routes
+    console.log("🛣️ Mounting routes...");
+    
     const authRouter = (await import("./routes/auth.js")).default;
     const projectRoutes = (await import("./routes/projects.js")).default;
     const skillsRoutes = (await import("./routes/skills.js")).default;
@@ -123,7 +138,7 @@ const initializeServer = async () => {
     const blogRoutes = (await import("./routes/blog.js")).default;
     const chatbotRoutes = (await import("./routes/chatbot.js")).default;
 
-    // Mount routes
+    // Mount all routes with /api prefix
     app.use("/api/auth", authRouter);
     app.use("/api/projects", projectRoutes);
     app.use("/api/skills", skillsRoutes);
@@ -133,55 +148,64 @@ const initializeServer = async () => {
     app.use("/api/blog", blogRoutes);
     app.use("/api/chatbot", chatbotRoutes);
 
-    // Health check endpoint
-    app.get("/api/health", (req, res) => {
-      res.json({ 
-        status: "OK", 
-        database: "PostgreSQL",
-        socketConnected: io.engine.clientsCount,
-        timestamp: new Date().toISOString() 
-      });
-    });
+    console.log("✅ All routes mounted successfully");
 
-    // Root endpoint
-    app.get("/", (req, res) => {
-      res.json({ 
-        message: "Portfolio Backend API",
-        status: "Running",
-        version: "1.0.0",
-        endpoints: [
-          "/api/auth",
-          "/api/projects",
-          "/api/skills",
-          "/api/contact",
-          "/api/stats",
-          "/api/analytics",
-          "/api/blog",
-          "/api/chatbot"
-        ]
-      });
-    });
-
-    // Static file serving for uploads
+    // ========================================
+    // Static File Serving
+    // ========================================
     app.use(
       "/Uploads",
       express.static(path.join(__dirname, "Uploads"), {
         fallthrough: true,
-        setHeaders: (res, filePath) => {
+        setHeaders: (res) => {
           res.setHeader("Cache-Control", "public, max-age=31536000");
           res.setHeader("Access-Control-Allow-Origin", "*");
         },
       })
     );
 
-    // Error handler
-    app.use(errorHandler);
+    // ========================================
+    // Health Check & Root
+    // ========================================
+    app.get("/api/health", (req, res) => {
+      res.json({ 
+        status: "OK", 
+        database: "PostgreSQL",
+        socketConnected: clients.size,
+        timestamp: new Date().toISOString() 
+      });
+    });
 
+    app.get("/", (req, res) => {
+      res.json({ 
+        message: "Portfolio Backend API",
+        status: "Running",
+        version: "1.0.0",
+        database: "PostgreSQL",
+        socketClients: clients.size,
+        endpoints: [
+          "/api/auth - Authentication",
+          "/api/projects - Projects CRUD",
+          "/api/skills - Skills management",
+          "/api/contact - Contact form",
+          "/api/stats - GitHub & system stats",
+          "/api/analytics - Visitor analytics",
+          "/api/blog - Blog management",
+          "/api/chatbot - AI chatbot"
+        ]
+      });
+    });
+
+    // ========================================
+    // Error Handlers
+    // ========================================
+    
     // 404 handler for API routes
     app.use("/api/*", (req, res) => {
       res.status(404).json({ 
         message: "API endpoint not found",
         path: req.path,
+        method: req.method,
         availableEndpoints: [
           "/api/auth",
           "/api/projects",
@@ -195,40 +219,58 @@ const initializeServer = async () => {
       });
     });
 
-    console.log("All routes mounted successfully");
+    // Global error handler
+    app.use(errorHandler);
+
   } catch (error) {
-    console.error("Server setup failed:", error.message, error.stack);
-    console.error("Please ensure PostgreSQL is running and credentials are correct");
+    console.error("❌ Server setup failed:", error.message);
+    console.error(error.stack);
     process.exit(1);
   }
 };
 
-// Start server
+// ========================================
+// Start Server
+// ========================================
 const PORT = process.env.PORT || 5000;
 
-// Initialize server before starting to listen
 initializeServer()
   .then(() => {
     server.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log("Database: PostgreSQL");
-      console.log("Allowed origins:", allowedOrigins);
-      console.log("Socket.IO path: /socket.io/");
-      console.log("Available API endpoints:");
-      console.log("- /api/auth/* - Authentication");
-      console.log("- /api/projects/* - Projects CRUD");
-      console.log("- /api/skills/* - Skills management");
-      console.log("- /api/contact/* - Contact form");
-      console.log("- /api/stats/* - GitHub & system stats");
-      console.log("- /api/analytics/* - Visitor analytics");
-      console.log("- /api/blog/* - Blog management");
-      console.log("- /api/chatbot/* - AI chatbot");
+      console.log(`
+╔════════════════════════════════════════════╗
+║     🚀 Portfolio Backend Server Ready      ║
+╠════════════════════════════════════════════╣
+║  Port: ${PORT}                              
+║  Database: PostgreSQL                      
+║  Socket Clients: ${clients.size}                        
+║  CORS Origins: ${allowedOrigins.length}                      
+╠════════════════════════════════════════════╣
+║  API Endpoints:                            
+║  • /api/auth       - Authentication        
+║  • /api/projects   - Projects CRUD         
+║  • /api/skills     - Skills management     
+║  • /api/contact    - Contact form          
+║  • /api/stats      - GitHub stats          
+║  • /api/analytics  - Visitor analytics     
+║  • /api/blog       - Blog management       
+║  • /api/chatbot    - AI chatbot            
+╚════════════════════════════════════════════╝
+      `);
     });
   })
   .catch((error) => {
-    console.error("Failed to initialize server:", error.message, error.stack);
-    console.error("Check PostgreSQL connection and database configuration");
+    console.error("❌ Failed to initialize server:", error.message);
     process.exit(1);
   });
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('📴 SIGTERM received, shutting down gracefully...');
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
+  });
+});
 
 export default app;
