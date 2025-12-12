@@ -1,4 +1,4 @@
-// server/db.js - Updated with all new tables (PostgreSQL)
+// server/db.js - Fixed configuration for Render deployment
 import pkg from 'pg';
 const { Pool } = pkg;
 import dotenv from 'dotenv';
@@ -6,28 +6,72 @@ import bcrypt from 'bcryptjs';
 
 dotenv.config();
 
-// Create a connection pool
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'portfolio_db',
-  port: process.env.DB_PORT || 5432,
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+// Detect environment immediately
+const isRenderEnvironment = !!process.env.RENDER || !!process.env.DATABASE_URL;
+console.log('=== DATABASE CONNECTION INFO ===');
+console.log('Environment:', isRenderEnvironment ? 'RENDER (Production)' : 'LOCAL (Development)');
+console.log('DATABASE_URL present:', !!process.env.DATABASE_URL);
 
-// Test database connection
-const testConnection = async () => {
-  try {
-    const client = await pool.connect();
-    console.log('Successfully connected to PostgreSQL database');
-    client.release();
-    return true;
-  } catch (error) {
-    console.error('Failed to connect to PostgreSQL:', error.message, error.code, error.stack);
-    throw error;
+// Create connection pool based on environment
+let pool;
+
+if (isRenderEnvironment && process.env.DATABASE_URL) {
+  console.log('Using Render DATABASE_URL');
+  
+  // Parse the DATABASE_URL to ensure correct format
+  const databaseUrl = process.env.DATABASE_URL;
+  
+  pool = new Pool({
+    connectionString: databaseUrl,
+    ssl: {
+      rejectUnauthorized: false
+    },
+    // Connection pool settings for Render
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000, // Increased timeout
+  });
+} else {
+  console.log('Using local PostgreSQL configuration');
+  pool = new Pool({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'portfolio_db',
+    port: process.env.DB_PORT || 5432,
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  });
+}
+
+console.log('Connection pool created successfully');
+console.log('================================');
+
+// Test database connection with retry logic
+const testConnection = async (retries = 5) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const client = await pool.connect();
+      console.log('✓ Successfully connected to PostgreSQL database');
+      
+      // Test a simple query
+      const result = await client.query('SELECT NOW()');
+      console.log('✓ Database query test successful:', result.rows[0].now);
+      
+      client.release();
+      return true;
+    } catch (error) {
+      console.error(`✗ Connection attempt ${i + 1}/${retries} failed:`, error.message);
+      
+      if (i < retries - 1) {
+        console.log(`Retrying in ${(i + 1) * 2} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, (i + 1) * 2000));
+      } else {
+        console.error('✗ All connection attempts failed');
+        throw error;
+      }
+    }
   }
 };
 
@@ -37,7 +81,7 @@ const executeQuery = async (sql, params = []) => {
     const result = await pool.query(sql, params);
     return result.rows;
   } catch (error) {
-    console.error('Database query error:', error.message, error.code, error.stack);
+    console.error('Database query error:', error.message);
     throw error;
   }
 };
@@ -47,37 +91,9 @@ const initDatabase = async () => {
   try {
     console.log('Starting database initialization...');
 
-    // Create a temporary connection for database creation
-    const tempPool = new Pool({
-      host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || '',
-      database: 'postgres',
-      port: process.env.DB_PORT || 5432,
-    });
-
-    // Create database if it doesn't exist
-    console.log('Ensuring database exists...');
-    const dbName = process.env.DB_NAME || 'portfolio_db';
-    
-    try {
-      await tempPool.query(`CREATE DATABASE ${dbName}`);
-      console.log(`Database ${dbName} created`);
-    } catch (error) {
-      if (error.code === '42P04') {
-        console.log(`Database ${dbName} already exists`);
-      } else {
-        throw error;
-      }
-    }
-
-    // Close temporary connection
-    await tempPool.end();
-
-    // Now use the pool for table creation
-    if (!(await testConnection())) {
-      throw new Error('Database connection failed');
-    }
+    // Test connection first
+    console.log('Testing database connection...');
+    await testConnection();
 
     // Create users table
     console.log('Creating users table...');
@@ -105,7 +121,8 @@ const initDatabase = async () => {
       )
     `);
 
-    // Create trigger for skills updatedAt
+    // Create trigger function for updatedAt
+    console.log('Creating trigger functions...');
     await executeQuery(`
       CREATE OR REPLACE FUNCTION update_updated_at_column()
       RETURNS TRIGGER AS $$
@@ -143,7 +160,6 @@ const initDatabase = async () => {
       )
     `);
 
-    // Create trigger for projects updatedAt
     await executeQuery(`
       DROP TRIGGER IF EXISTS update_projects_updated_at ON projects
     `);
@@ -187,7 +203,7 @@ const initDatabase = async () => {
       )
     `);
 
-    // Create trigger for github_stats last_updated
+    // Create trigger function for last_updated
     await executeQuery(`
       CREATE OR REPLACE FUNCTION update_last_updated_column()
       RETURNS TRIGGER AS $$
@@ -269,7 +285,6 @@ const initDatabase = async () => {
       )
     `);
 
-    // Create trigger for blog_posts updated_at
     await executeQuery(`
       DROP TRIGGER IF EXISTS update_blog_posts_updated_at ON blog_posts
     `);
@@ -322,9 +337,9 @@ const initDatabase = async () => {
       )
     `);
 
-    console.log('Database initialized successfully');
+    console.log('✓ Database initialized successfully');
   } catch (error) {
-    console.error('Error initializing database:', error.message, error.stack);
+    console.error('✗ Error initializing database:', error.message, error.stack);
     throw error;
   }
 };
@@ -336,23 +351,28 @@ const createInitialAdmin = async () => {
     const hashedPassword = await bcrypt.hash('admin123', 10);
 
     // Check if admin exists, and update or create
-    const existingAdmin = await executeQuery('SELECT * FROM users WHERE email = $1', ['syedazadarhussayn@gmail.com']);
+    const existingAdmin = await executeQuery(
+      'SELECT * FROM users WHERE email = $1',
+      ['syedazadarhussayn@gmail.com']
+    );
 
     if (existingAdmin.length === 0) {
       // Create new admin
-      await executeQuery('INSERT INTO users (email, password, role) VALUES ($1, $2, $3)', [
-        'syedazadarhussayn@gmail.com',
-        hashedPassword,
-        'admin',
-      ]);
-      console.log('Initial admin user created with email: syedazadarhussayn@gmail.com');
+      await executeQuery(
+        'INSERT INTO users (email, password, role) VALUES ($1, $2, $3)',
+        ['syedazadarhussayn@gmail.com', hashedPassword, 'admin']
+      );
+      console.log('✓ Initial admin user created with email: syedazadarhussayn@gmail.com');
     } else {
       // Update existing admin's password
-      await executeQuery('UPDATE users SET password = $1 WHERE email = $2', [hashedPassword, 'syedazadarhussayn@gmail.com']);
-      console.log('Admin user password reset');
+      await executeQuery(
+        'UPDATE users SET password = $1 WHERE email = $2',
+        [hashedPassword, 'syedazadarhussayn@gmail.com']
+      );
+      console.log('✓ Admin user password reset');
     }
   } catch (error) {
-    console.error('Error creating/resetting initial admin:', error.message, error.stack);
+    console.error('✗ Error creating/resetting initial admin:', error.message);
   }
 };
 
