@@ -1,4 +1,4 @@
-// server.js - FIXED VERSION with proper route loading
+// server.js - COMPLETE FIXED VERSION
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 import { initDatabase, createInitialAdmin } from "./server/db.js";
 import errorHandler from "./middleware/errorHandler.js";
 
-// Import routes at the top level (FIXED)
+// Import routes
 import authRouter from "./routes/auth.js";
 import projectRoutes from "./routes/projects.js";
 import skillsRoutes from "./routes/skills.js";
@@ -31,7 +31,7 @@ const app = express();
 const server = http.createServer(app);
 
 // ========================================
-// CORS Configuration
+// CORS Configuration - FIXED
 // ========================================
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(",")
@@ -41,34 +41,33 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
 if (allowedOrigins.length === 0) {
   allowedOrigins.push(
     'http://localhost:5173',
-    'http://localhost:3000',
-    'https://syedazadarhussayn.vercel.app',
-    'https://syedazadarhussayn-habxy1n2p-quickjoins-projects.vercel.app'
+    'http://localhost:3000'
   );
   console.warn('⚠️ No ALLOWED_ORIGINS configured, using defaults');
 }
 
 console.log('🌐 Allowed CORS Origins:', allowedOrigins);
 
-// FIX: match Vercel subdomains + allow null origin (Socket polling)
+// FIXED: Proper CORS for both API and Socket.IO
 const corsOptions = {
   origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) {
-      console.log("🔵 No origin -> allowed");
       return callback(null, true);
     }
 
-    const isAllowed =
-  allowedOrigins.includes(origin) ||
-  origin.endsWith(".vercel.app") ||
-  origin.includes("vercel.app");
-
+    // Check if origin is allowed
+    const isAllowed = allowedOrigins.some(allowedOrigin => 
+      origin === allowedOrigin || 
+      origin.endsWith('.vercel.app') ||
+      origin.includes('vercel.app')
+    );
 
     if (isAllowed) {
       callback(null, true);
     } else {
       console.log("❌ Blocked origin:", origin);
-      callback(new Error("Not allowed by CORS"));
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
     }
   },
   credentials: true,
@@ -81,26 +80,27 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
-
 // ========================================
-// Socket.IO Configuration
+// Socket.IO Configuration - FIXED
 // ========================================
 const io = new Server(server, {
   cors: {
-    origin: (origin, callback) => {
-      callback(null, true);           // allow ALL origins
+    origin: function (origin, callback) {
+      // Allow all origins for Socket.IO (required for polling)
+      callback(null, true);
     },
     methods: ["GET", "POST"],
-    credentials: false                // required when allowing all origins
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"]
   },
-
   path: '/socket.io/',
-  transports: ["websocket"],  
+  transports: ["polling", "websocket"], // Allow polling first
   allowUpgrades: true,
   pingTimeout: 60000,
   pingInterval: 25000,
   maxHttpBufferSize: 1e6,
-  allowEIO3: true
+  allowEIO3: true,
+  cookie: false // Disable cookies to avoid credential issues
 });
 
 const clients = new Set();
@@ -125,7 +125,6 @@ io.on("connection", (socket) => {
 
 app.set("io", io);
 
-
 // ========================================
 // Middleware
 // ========================================
@@ -138,7 +137,7 @@ app.use((req, res, next) => {
 });
 
 // ========================================
-// Mount Routes BEFORE initialization
+// Mount Routes
 // ========================================
 console.log("🛣️ Mounting routes...");
 
@@ -261,7 +260,7 @@ initializeServer()
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`
 ╔═══════════════════════════════════════════════╗
-║     🚀 Portfolio Backend Server Ready      ║
+║     🚀 Portfolio Backend Server Ready         ║
 ╠═══════════════════════════════════════════════╣
 ║  Port: ${PORT}                              
 ║  Database: PostgreSQL                      
