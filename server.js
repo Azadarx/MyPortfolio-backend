@@ -1,4 +1,4 @@
-// server.js - FIXED VERSION
+// server.js - Socket.IO Configuration for Render Free Tier
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -31,7 +31,7 @@ const app = express();
 const server = http.createServer(app);
 
 // ========================================
-// CORS Configuration - FIXED
+// CORS Configuration
 // ========================================
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(",")
@@ -41,17 +41,16 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
 if (allowedOrigins.length === 0) {
   allowedOrigins.push(
     'http://localhost:5173',
-    'http://localhost:3000'
+    'http://localhost:3000',
+    'https://syedazadarhussayn.vercel.app'
   );
-  console.warn('⚠️ No ALLOWED_ORIGINS configured, using defaults');
 }
 
-console.log('🌍 Allowed CORS Origins:', allowedOrigins);
+console.log('🌐 Allowed CORS Origins:', allowedOrigins);
 
-// FIXED: Proper CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true); // mobile apps/Postman
+    if (!origin) return callback(null, true);
 
     if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
       return callback(null, true);
@@ -69,25 +68,18 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-
-// Handle preflight requests explicitly
 app.options("*", cors(corsOptions));
 
 // ========================================
-// Socket.IO Configuration - FIXED
+// Socket.IO - OPTIMIZED FOR RENDER FREE TIER
 // ========================================
 const io = new Server(server, {
   cors: {
     origin: function (origin, callback) {
-      // Socket.io CORS must match exactly
-      if (!origin) {
-        return callback(null, true);
-      }
+      if (!origin) return callback(null, true);
       
       const isAllowed = allowedOrigins.some(allowedOrigin => 
-        origin === allowedOrigin || 
-        origin.endsWith('.vercel.app') ||
-        allowedOrigin === '*'
+        origin === allowedOrigin || origin.endsWith('.vercel.app')
       );
 
       if (isAllowed) {
@@ -98,52 +90,46 @@ const io = new Server(server, {
       }
     },
     methods: ["GET", "POST"],
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"]
+    credentials: true
   },
   path: '/socket.io/',
-  transports: ["websocket", "polling"], // FIXED: Try WebSocket first
+  // CRITICAL FOR RENDER FREE TIER: Start with polling
+  transports: ["polling", "websocket"],
   allowUpgrades: true,
+  upgradeTimeout: 30000,
   pingTimeout: 60000,
   pingInterval: 25000,
-  maxHttpBufferSize: 1e6,
-  allowEIO3: true,
-  perMessageDeflate: false, // FIXED: Disable compression for Render
-  httpCompression: false // FIXED: Disable HTTP compression
+  connectTimeout: 45000,
+  // RENDER FREE TIER: Disable compression
+  perMessageDeflate: false,
+  httpCompression: false,
+  // Keep connections alive
+  cookie: false,
+  serveClient: false
 });
 
-const clients = new Set();
+const clients = new Map();
 
 io.on("connection", (socket) => {
-  console.log("✅ Socket client connected:", socket.id, "Transport:", socket.conn.transport.name);
-  clients.add(socket);
+  console.log("✅ Socket connected:", socket.id, "Transport:", socket.conn.transport.name);
+  clients.set(socket.id, socket);
 
   socket.join("analytics");
   socket.join("chatbot");
 
-  // Log transport upgrades
   socket.conn.on("upgrade", (transport) => {
     console.log("⬆️ Socket upgraded to:", transport.name);
   });
 
   socket.on("disconnect", (reason) => {
-    console.log("🔌 Socket client disconnected:", socket.id, "-", reason);
-    clients.delete(socket);
+    console.log("🔌 Socket disconnected:", socket.id, "-", reason);
+    clients.delete(socket.id);
   });
 
   socket.on("error", (error) => {
-    console.error("❌ Socket error:", error);
-    clients.delete(socket);
+    console.error("❌ Socket error:", socket.id, error.message);
+    clients.delete(socket.id);
   });
-
-  socket.on("connect_error", (error) => {
-    console.error("❌ Socket connect_error:", error);
-  });
-});
-
-// Monitor Socket.io engine for debugging
-io.engine.on("connection_error", (err) => {
-  console.error("❌ Engine connection_error:", err);
 });
 
 app.set("io", io);
@@ -154,47 +140,35 @@ app.set("io", io);
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-// Request logging
 app.use((req, res, next) => {
-  console.log(`📨 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'No origin'}`);
+  console.log(`📨 ${req.method} ${req.path}`);
   next();
 });
 
 // ========================================
-// Mount Routes - FIXED ORDER
+// Mount Routes
 // ========================================
-console.log("🛣️ Mounting routes...");
-
-try {
-  // Health check BEFORE other routes
-  app.get("/api/health", (req, res) => {
-    res.json({ 
-      status: "OK", 
-      database: "PostgreSQL",
-      socketConnected: clients.size,
-      timestamp: new Date().toISOString() 
-    });
+app.get("/api/health", (req, res) => {
+  res.json({ 
+    status: "OK", 
+    database: "PostgreSQL",
+    socketConnections: clients.size,
+    timestamp: new Date().toISOString() 
   });
+});
 
-  // Mount all API routes
-  app.use("/api/auth", authRouter);
-  app.use("/api/projects", projectRoutes);
-  app.use("/api/skills", skillsRoutes);
-  app.use("/api/contact", contactRoutes);
-  app.use("/api/analytics", analyticsRoutes);
-  app.use("/api/stats", statsRoutes);
-  app.use("/api/blog", blogRoutes);
-  app.use("/api/chatbot", chatbotRoutes);
-  app.use("/api/journey", journeyRoutes);
-  
-  console.log("✅ All routes mounted successfully");
-} catch (error) {
-  console.error("❌ Route mounting error:", error);
-  throw error;
-}
+app.use("/api/auth", authRouter);
+app.use("/api/projects", projectRoutes);
+app.use("/api/skills", skillsRoutes);
+app.use("/api/contact", contactRoutes);
+app.use("/api/analytics", analyticsRoutes);
+app.use("/api/stats", statsRoutes);
+app.use("/api/blog", blogRoutes);
+app.use("/api/chatbot", chatbotRoutes);
+app.use("/api/journey", journeyRoutes);
 
 // ========================================
-// Static File Serving
+// Static Files
 // ========================================
 app.use(
   "/Uploads",
@@ -214,108 +188,65 @@ app.get("/", (req, res) => {
   res.json({ 
     message: "Portfolio Backend API",
     status: "Running",
-    version: "1.0.0",
-    database: "PostgreSQL",
-    socketClients: clients.size,
-    endpoints: [
-      "/api/health - Health check",
-      "/api/auth - Authentication",
-      "/api/projects - Projects CRUD",
-      "/api/skills - Skills management",
-      "/api/contact - Contact form",
-      "/api/stats - GitHub & system stats",
-      "/api/analytics - Visitor analytics",
-      "/api/blog - Blog management",
-      "/api/chatbot - AI chatbot",
-      "/api/journey - Journey/Experience"
-    ]
+    socketConnections: clients.size
   });
 });
 
 // ========================================
-// Initialize Database
-// ========================================
-const initializeServer = async () => {
-  console.log("🔧 Initializing PostgreSQL database...");
-  
-  try {
-    await initDatabase();
-    console.log("✅ Database initialized");
-    
-    await createInitialAdmin();
-    console.log("✅ Admin user setup complete");
-
-  } catch (error) {
-    console.error("❌ Database initialization failed:", error.message);
-    console.error(error.stack);
-    throw error;
-  }
-};
-
-// ========================================
-// Error Handlers (AFTER all routes)
+// Error Handlers
 // ========================================
 app.use("/api/*", (req, res) => {
-  console.log("❌ 404 - Route not found:", req.method, req.path);
   res.status(404).json({ 
     message: "API endpoint not found",
-    path: req.path,
-    method: req.method,
-    availableEndpoints: [
-      "/api/auth",
-      "/api/projects",
-      "/api/skills",
-      "/api/contact",
-      "/api/stats",
-      "/api/analytics",
-      "/api/blog",
-      "/api/chatbot",
-      "/api/journey"
-    ]
+    path: req.path
   });
 });
 
 app.use(errorHandler);
 
 // ========================================
-// Start Server
+// Initialize & Start Server
 // ========================================
 const PORT = process.env.PORT || 5000;
+
+const initializeServer = async () => {
+  try {
+    await initDatabase();
+    console.log("✅ Database initialized");
+    
+    await createInitialAdmin();
+    console.log("✅ Admin user ready");
+  } catch (error) {
+    console.error("❌ Database initialization failed:", error.message);
+    throw error;
+  }
+};
 
 initializeServer()
   .then(() => {
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`
-╔═══════════════════════════════════════════════╗
-║     🚀 Portfolio Backend Server Ready         ║
-╠═══════════════════════════════════════════════╣
-║  Port: ${PORT}                              
-║  Database: PostgreSQL                      
-║  Socket Clients: ${clients.size}                        
-║  CORS Origins: ${allowedOrigins.length}                      
-╠═══════════════════════════════════════════════╣
-║  API Endpoints:                            
-║  • /api/health      - Health check         
-║  • /api/auth        - Authentication        
-║  • /api/projects    - Projects CRUD         
-║  • /api/skills      - Skills management     
-║  • /api/contact     - Contact form          
-║  • /api/stats       - GitHub stats          
-║  • /api/analytics   - Visitor analytics     
-║  • /api/blog        - Blog management       
-║  • /api/chatbot     - AI chatbot            
-║  • /api/journey     - Journey/Experience    
-╚═══════════════════════════════════════════════╝
+╔═══════════════════════════════════════════╗
+║     🚀 Server Running on Port ${PORT}        ║
+╠═══════════════════════════════════════════╣
+║  Socket Connections: ${clients.size}                      
+║  Database: PostgreSQL                     
+╚═══════════════════════════════════════════╝
       `);
     });
   })
   .catch((error) => {
-    console.error("❌ Failed to initialize server:", error.message);
+    console.error("❌ Server initialization failed:", error.message);
     process.exit(1);
   });
 
+// Keep server alive on Render free tier
+setInterval(() => {
+  console.log(`💓 Keepalive - ${clients.size} socket(s) connected`);
+}, 50000);
+
 process.on('SIGTERM', () => {
-  console.log('🔴 SIGTERM received, shutting down gracefully...');
+  console.log('🔴 SIGTERM received, shutting down...');
   server.close(() => {
     console.log('✅ Server closed');
     process.exit(0);
