@@ -39,16 +39,30 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .filter(Boolean);
 
 if (allowedOrigins.length === 0) {
-  allowedOrigins.push('http://localhost:5173', 'http://localhost:3000');
+  allowedOrigins.push(
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://syedazadarhussayn.vercel.app',
+    'https://syedazadarhussayn-habxy1n2p-quickjoins-projects.vercel.app'
+  );
   console.warn('⚠️ No ALLOWED_ORIGINS configured, using defaults');
 }
 
 console.log('🌐 Allowed CORS Origins:', allowedOrigins);
 
+// FIX: match Vercel subdomains + allow null origin (Socket polling)
 const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
+    if (!origin) {
+      console.log("🔵 No origin -> allowed");
+      return callback(null, true);
+    }
+
+    const isAllowed = allowedOrigins.some(o =>
+      origin === o || origin.startsWith(o.replace("https://", "").split(".")[0])
+    );
+
+    if (isAllowed) {
       callback(null, true);
     } else {
       console.log("❌ Blocked origin:", origin);
@@ -64,6 +78,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
+
 
 // ========================================
 // Socket.IO Configuration
@@ -103,6 +118,7 @@ io.on("connection", (socket) => {
 });
 
 app.set("io", io);
+
 
 // ========================================
 // Middleware
