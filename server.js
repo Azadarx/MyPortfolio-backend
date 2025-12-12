@@ -1,4 +1,4 @@
-// server.js - PostgreSQL compatible version
+// server.js - Fixed CORS configuration
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -21,27 +21,51 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
-// CORS configuration
+// FIXED CORS configuration - Allow your Vercel deployment
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "http://localhost:5000",
+  "https://syedazadarhussayn-lz5vtesuv-quickjoins-projects.vercel.app",
+  "https://syedazadarhussayn.vercel.app", // Add your custom domain if you have one
+];
+
 const corsOptions = {
-  origin: [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "http://localhost:5000",
-  ],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('Blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
+  optionsSuccessStatus: 200
 };
 
+// Apply CORS middleware
 app.use(cors(corsOptions));
 
-// Socket.IO setup with CORS
+// Handle preflight requests
+app.options('*', cors(corsOptions));
+
+// Socket.IO setup with fixed CORS
 const io = new Server(server, {
   cors: {
-    origin: corsOptions.origin,
-    methods: corsOptions.methods,
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"]
   },
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 // Store connected clients
@@ -83,6 +107,12 @@ app.set("io", io);
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// Add request logging
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path} - Origin: ${req.headers.origin}`);
+  next();
+});
+
 const initializeServer = async () => {
   console.log("Initializing PostgreSQL database...");
   try {
@@ -99,20 +129,16 @@ const initializeServer = async () => {
     const projectRoutes = (await import("./routes/projects.js")).default;
     const skillsRoutes = (await import("./routes/skills.js")).default;
     const contactRoutes = (await import("./routes/contact.js")).default;
-
-    // Import new routes
     const statsRoutes = (await import("./routes/stats.js")).default;
     const analyticsRoutes = (await import("./routes/analytics.js")).default;
     const blogRoutes = (await import("./routes/blog.js")).default;
     const chatbotRoutes = (await import("./routes/chatbot.js")).default;
 
-    // Mount existing routes
+    // Mount routes
     app.use("/api/auth", authRouter);
     app.use("/api/projects", projectRoutes);
     app.use("/api/skills", skillsRoutes);
     app.use("/api/contact", contactRoutes);
-
-    // Mount new routes
     app.use("/api/analytics", analyticsRoutes);
     app.use("/api/stats", statsRoutes);
     app.use("/api/blog", blogRoutes);
@@ -124,6 +150,15 @@ const initializeServer = async () => {
         status: "OK", 
         database: "PostgreSQL",
         timestamp: new Date().toISOString() 
+      });
+    });
+
+    // Root endpoint
+    app.get("/", (req, res) => {
+      res.json({ 
+        message: "Portfolio Backend API",
+        status: "Running",
+        version: "1.0.0"
       });
     });
 
@@ -139,20 +174,15 @@ const initializeServer = async () => {
       })
     );
 
-    // Production setup
-    if (process.env.NODE_ENV === "production") {
-      app.use(express.static("client/build"));
-      app.get("*", (req, res) => {
-        res.sendFile(path.resolve(__dirname, "client", "build", "index.html"));
-      });
-    }
-
     // Error handler
     app.use(errorHandler);
 
     // 404 handler for API routes
     app.use("/api/*", (req, res) => {
-      res.status(404).json({ message: "API endpoint not found" });
+      res.status(404).json({ 
+        message: "API endpoint not found",
+        path: req.path 
+      });
     });
 
     console.log("All routes mounted successfully");
@@ -169,9 +199,10 @@ const PORT = process.env.PORT || 5000;
 // Initialize server before starting to listen
 initializeServer()
   .then(() => {
-    server.listen(PORT, () => {
+    server.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on port ${PORT}`);
       console.log("Database: PostgreSQL");
+      console.log("Allowed origins:", allowedOrigins);
       console.log("Available API endpoints:");
       console.log("- /api/auth/* - Authentication");
       console.log("- /api/projects/* - Projects CRUD");
