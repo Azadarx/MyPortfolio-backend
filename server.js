@@ -22,50 +22,31 @@ const app = express();
 const server = http.createServer(app);
 
 // FIXED CORS configuration - Allow your Vercel deployment
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:3000",
-  "http://localhost:5000",
-  "https://syedazadarhussayn-lz5vtesuv-quickjoins-projects.vercel.app",
-  "https://syedazadarhussayn.vercel.app", // Add your custom domain if you have one
-];
+const allowedOrigins = process.env.ALLOWED_ORIGINS.split(",").map(o => o.trim());
+
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.log('Blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
+      console.log("Blocked origin:", origin);
+      callback(new Error("Not allowed by CORS"));
     }
   },
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
-  optionsSuccessStatus: 200
+  credentials: true
 };
-
-// Apply CORS middleware
 app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
-// Handle preflight requests
-app.options('*', cors(corsOptions));
-
-// Socket.IO setup with fixed CORS
+// Socket.IO config
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
-    methods: ["GET", "POST"],
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"]
+    credentials: true
   },
-  transports: ['websocket', 'polling'],
-  allowEIO3: true,
-  pingTimeout: 60000,
-  pingInterval: 25000
+  transports: ["websocket", "polling"]
 });
 
 // Store connected clients
