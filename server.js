@@ -1,4 +1,4 @@
-// server.js - Complete fixed version
+// server.js - COMPLETE FIXED VERSION
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -8,13 +8,11 @@ import http from "http";
 import { Server } from "socket.io";
 import { fileURLToPath } from "url";
 
-// Load environment variables FIRST
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Custom modules
 import { initDatabase, createInitialAdmin } from "./server/db.js";
 import errorHandler from "./middleware/errorHandler.js";
 
@@ -29,19 +27,16 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .map(o => o.trim())
   .filter(Boolean);
 
-// Add fallback origins
 if (allowedOrigins.length === 0) {
   allowedOrigins.push('http://localhost:5173', 'http://localhost:3000');
   console.warn('⚠️ No ALLOWED_ORIGINS configured, using defaults');
 }
 
-console.log('🌐 Allowed CORS Origins:', allowedOrigins);
+console.log('🌍 Allowed CORS Origins:', allowedOrigins);
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
-    
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -53,10 +48,9 @@ const corsOptions = {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400 // 24 hours
+  maxAge: 86400
 };
 
-// Apply CORS
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
@@ -77,7 +71,6 @@ const io = new Server(server, {
   allowEIO3: true
 });
 
-// Track connected clients
 const clients = new Set();
 
 io.on("connection", (socket) => {
@@ -98,7 +91,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// Make io available to routes
 app.set("io", io);
 
 // ========================================
@@ -107,7 +99,6 @@ app.set("io", io);
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-// Request logging
 app.use((req, res, next) => {
   console.log(`📨 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'No origin'}`);
   next();
@@ -126,7 +117,6 @@ const initializeServer = async () => {
     await createInitialAdmin();
     console.log("✅ Admin user setup complete");
 
-    // Import and mount routes
     console.log("🛣️ Mounting routes...");
     
     const authRouter = (await import("./routes/auth.js")).default;
@@ -137,6 +127,7 @@ const initializeServer = async () => {
     const analyticsRoutes = (await import("./routes/analytics.js")).default;
     const blogRoutes = (await import("./routes/blog.js")).default;
     const chatbotRoutes = (await import("./routes/chatbot.js")).default;
+    const journeyRoutes = (await import("./routes/journey.js")).default;
 
     // Mount all routes with /api prefix
     app.use("/api/auth", authRouter);
@@ -147,6 +138,7 @@ const initializeServer = async () => {
     app.use("/api/stats", statsRoutes);
     app.use("/api/blog", blogRoutes);
     app.use("/api/chatbot", chatbotRoutes);
+    app.use("/api/journey", journeyRoutes);
 
     console.log("✅ All routes mounted successfully");
 
@@ -191,7 +183,8 @@ const initializeServer = async () => {
           "/api/stats - GitHub & system stats",
           "/api/analytics - Visitor analytics",
           "/api/blog - Blog management",
-          "/api/chatbot - AI chatbot"
+          "/api/chatbot - AI chatbot",
+          "/api/journey - Journey/Experience"
         ]
       });
     });
@@ -200,7 +193,6 @@ const initializeServer = async () => {
     // Error Handlers
     // ========================================
     
-    // 404 handler for API routes
     app.use("/api/*", (req, res) => {
       res.status(404).json({ 
         message: "API endpoint not found",
@@ -214,12 +206,12 @@ const initializeServer = async () => {
           "/api/stats",
           "/api/analytics",
           "/api/blog",
-          "/api/chatbot"
+          "/api/chatbot",
+          "/api/journey"
         ]
       });
     });
 
-    // Global error handler
     app.use(errorHandler);
 
   } catch (error) {
@@ -238,14 +230,14 @@ initializeServer()
   .then(() => {
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`
-╔════════════════════════════════════════════╗
+╔═══════════════════════════════════════════════╗
 ║     🚀 Portfolio Backend Server Ready      ║
-╠════════════════════════════════════════════╣
+╠═══════════════════════════════════════════════╣
 ║  Port: ${PORT}                              
 ║  Database: PostgreSQL                      
 ║  Socket Clients: ${clients.size}                        
 ║  CORS Origins: ${allowedOrigins.length}                      
-╠════════════════════════════════════════════╣
+╠═══════════════════════════════════════════════╣
 ║  API Endpoints:                            
 ║  • /api/auth       - Authentication        
 ║  • /api/projects   - Projects CRUD         
@@ -255,7 +247,8 @@ initializeServer()
 ║  • /api/analytics  - Visitor analytics     
 ║  • /api/blog       - Blog management       
 ║  • /api/chatbot    - AI chatbot            
-╚════════════════════════════════════════════╝
+║  • /api/journey    - Journey/Experience    
+╚═══════════════════════════════════════════════╝
       `);
     });
   })
@@ -264,9 +257,8 @@ initializeServer()
     process.exit(1);
   });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('📴 SIGTERM received, shutting down gracefully...');
+  console.log('🔴 SIGTERM received, shutting down gracefully...');
   server.close(() => {
     console.log('✅ Server closed');
     process.exit(0);
