@@ -51,24 +51,14 @@ console.log('🌍 Allowed CORS Origins:', allowedOrigins);
 // FIXED: Proper CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, curl, etc.)
-    if (!origin) {
+    if (!origin) return callback(null, true); // mobile apps/Postman
+
+    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
       return callback(null, true);
     }
 
-    // Check if origin is explicitly allowed or matches Vercel pattern
-    const isAllowed = allowedOrigins.some(allowedOrigin => 
-      origin === allowedOrigin || 
-      origin.endsWith('.vercel.app') ||
-      allowedOrigin === '*'
-    );
-
-    if (isAllowed) {
-      callback(null, true);
-    } else {
-      console.log("❌ Blocked origin:", origin);
-      callback(new Error(`Origin ${origin} not allowed by CORS`));
-    }
+    console.log("❌ Blocked origin:", origin);
+    callback(new Error(`Origin ${origin} not allowed by CORS`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -78,7 +68,6 @@ const corsOptions = {
   optionsSuccessStatus: 204
 };
 
-// Apply CORS before any routes
 app.use(cors(corsOptions));
 
 // Handle preflight requests explicitly
