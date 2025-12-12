@@ -1,4 +1,4 @@
-// server.js - COMPLETE FIXED VERSION
+// server.js - FIXED VERSION
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -46,21 +46,21 @@ if (allowedOrigins.length === 0) {
   console.warn('⚠️ No ALLOWED_ORIGINS configured, using defaults');
 }
 
-console.log('🌐 Allowed CORS Origins:', allowedOrigins);
+console.log('🌍 Allowed CORS Origins:', allowedOrigins);
 
-// FIXED: Proper CORS for both API and Socket.IO
+// FIXED: Proper CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
+    // Allow requests with no origin (mobile apps, Postman, curl, etc.)
     if (!origin) {
       return callback(null, true);
     }
 
-    // Check if origin is allowed
+    // Check if origin is explicitly allowed or matches Vercel pattern
     const isAllowed = allowedOrigins.some(allowedOrigin => 
       origin === allowedOrigin || 
       origin.endsWith('.vercel.app') ||
-      origin.includes('vercel.app')
+      allowedOrigin === '*'
     );
 
     if (isAllowed) {
@@ -74,10 +74,14 @@ const corsOptions = {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 };
 
+// Apply CORS before any routes
 app.use(cors(corsOptions));
+
+// Handle preflight requests explicitly
 app.options("*", cors(corsOptions));
 
 // ========================================
@@ -86,31 +90,52 @@ app.options("*", cors(corsOptions));
 const io = new Server(server, {
   cors: {
     origin: function (origin, callback) {
-      // Allow all origins for Socket.IO (required for polling)
-      callback(null, true);
+      // Socket.io CORS must match exactly
+      if (!origin) {
+        return callback(null, true);
+      }
+      
+      const isAllowed = allowedOrigins.some(allowedOrigin => 
+        origin === allowedOrigin || 
+        origin.endsWith('.vercel.app') ||
+        allowedOrigin === '*'
+      );
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        console.log("❌ Socket blocked origin:", origin);
+        callback(new Error('CORS not allowed'));
+      }
     },
     methods: ["GET", "POST"],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"]
   },
   path: '/socket.io/',
-  transports: ["polling", "websocket"], // Allow polling first
+  transports: ["websocket", "polling"], // FIXED: Try WebSocket first
   allowUpgrades: true,
   pingTimeout: 60000,
   pingInterval: 25000,
   maxHttpBufferSize: 1e6,
   allowEIO3: true,
-  cookie: false // Disable cookies to avoid credential issues
+  perMessageDeflate: false, // FIXED: Disable compression for Render
+  httpCompression: false // FIXED: Disable HTTP compression
 });
 
 const clients = new Set();
 
 io.on("connection", (socket) => {
-  console.log("✅ Socket client connected:", socket.id);
+  console.log("✅ Socket client connected:", socket.id, "Transport:", socket.conn.transport.name);
   clients.add(socket);
 
   socket.join("analytics");
   socket.join("chatbot");
+
+  // Log transport upgrades
+  socket.conn.on("upgrade", (transport) => {
+    console.log("⬆️ Socket upgraded to:", transport.name);
+  });
 
   socket.on("disconnect", (reason) => {
     console.log("🔌 Socket client disconnected:", socket.id, "-", reason);
@@ -121,6 +146,15 @@ io.on("connection", (socket) => {
     console.error("❌ Socket error:", error);
     clients.delete(socket);
   });
+
+  socket.on("connect_error", (error) => {
+    console.error("❌ Socket connect_error:", error);
+  });
+});
+
+// Monitor Socket.io engine for debugging
+io.engine.on("connection_error", (err) => {
+  console.error("❌ Engine connection_error:", err);
 });
 
 app.set("io", io);
@@ -131,17 +165,29 @@ app.set("io", io);
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
+// Request logging
 app.use((req, res, next) => {
   console.log(`📨 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'No origin'}`);
   next();
 });
 
 // ========================================
-// Mount Routes
+// Mount Routes - FIXED ORDER
 // ========================================
 console.log("🛣️ Mounting routes...");
 
 try {
+  // Health check BEFORE other routes
+  app.get("/api/health", (req, res) => {
+    res.json({ 
+      status: "OK", 
+      database: "PostgreSQL",
+      socketConnected: clients.size,
+      timestamp: new Date().toISOString() 
+    });
+  });
+
+  // Mount all API routes
   app.use("/api/auth", authRouter);
   app.use("/api/projects", projectRoutes);
   app.use("/api/skills", skillsRoutes);
@@ -173,17 +219,8 @@ app.use(
 );
 
 // ========================================
-// Health Check & Root
+// Root Route
 // ========================================
-app.get("/api/health", (req, res) => {
-  res.json({ 
-    status: "OK", 
-    database: "PostgreSQL",
-    socketConnected: clients.size,
-    timestamp: new Date().toISOString() 
-  });
-});
-
 app.get("/", (req, res) => {
   res.json({ 
     message: "Portfolio Backend API",
@@ -192,6 +229,7 @@ app.get("/", (req, res) => {
     database: "PostgreSQL",
     socketClients: clients.size,
     endpoints: [
+      "/api/health - Health check",
       "/api/auth - Authentication",
       "/api/projects - Projects CRUD",
       "/api/skills - Skills management",
@@ -268,15 +306,16 @@ initializeServer()
 ║  CORS Origins: ${allowedOrigins.length}                      
 ╠═══════════════════════════════════════════════╣
 ║  API Endpoints:                            
-║  • /api/auth       - Authentication        
-║  • /api/projects   - Projects CRUD         
-║  • /api/skills     - Skills management     
-║  • /api/contact    - Contact form          
-║  • /api/stats      - GitHub stats          
-║  • /api/analytics  - Visitor analytics     
-║  • /api/blog       - Blog management       
-║  • /api/chatbot    - AI chatbot            
-║  • /api/journey    - Journey/Experience    
+║  • /api/health      - Health check         
+║  • /api/auth        - Authentication        
+║  • /api/projects    - Projects CRUD         
+║  • /api/skills      - Skills management     
+║  • /api/contact     - Contact form          
+║  • /api/stats       - GitHub stats          
+║  • /api/analytics   - Visitor analytics     
+║  • /api/blog        - Blog management       
+║  • /api/chatbot     - AI chatbot            
+║  • /api/journey     - Journey/Experience    
 ╚═══════════════════════════════════════════════╝
       `);
     });
