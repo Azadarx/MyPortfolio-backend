@@ -90,7 +90,8 @@ const io = new Server(server, {
     credentials: true
   },
   path: '/socket.io/',
-  transports: ["websocket", "polling"],
+  transports: ["websocket"],  
+  allowUpgrades: true,
   pingTimeout: 60000,
   pingInterval: 25000,
   maxHttpBufferSize: 1e6,
