@@ -92,7 +92,7 @@ const io = new Server(server, {
     },
     methods: ["GET", "POST"],
     credentials: false                // required when allowing all origins
-  }
+  },
 
   path: '/socket.io/',
   transports: ["websocket"],  
