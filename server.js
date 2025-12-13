@@ -1,11 +1,9 @@
-// server.js - Socket.IO Configuration for Render Free Tier
+// server.js - Clean REST API without Socket.IO
 import express from "express";
 import cors from "cors";
 import path from "path";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
-import http from "http";
-import { Server } from "socket.io";
 import { fileURLToPath } from "url";
 
 dotenv.config();
@@ -28,7 +26,6 @@ import chatbotRoutes from "./routes/chatbot.js";
 import journeyRoutes from "./routes/journey.js";
 
 const app = express();
-const server = http.createServer(app);
 
 // ========================================
 // CORS Configuration
@@ -71,70 +68,6 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 // ========================================
-// Socket.IO - OPTIMIZED FOR RENDER FREE TIER
-// ========================================
-const io = new Server(server, {
-  cors: {
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-      
-      const isAllowed = allowedOrigins.some(allowedOrigin => 
-        origin === allowedOrigin || origin.endsWith('.vercel.app')
-      );
-
-      if (isAllowed) {
-        callback(null, true);
-      } else {
-        console.log("❌ Socket blocked origin:", origin);
-        callback(new Error('CORS not allowed'));
-      }
-    },
-    methods: ["GET", "POST"],
-    credentials: true
-  },
-  path: '/socket.io/',
-  // CRITICAL FOR RENDER FREE TIER: Start with polling
-  transports: ["polling", "websocket"],
-  allowUpgrades: true,
-  upgradeTimeout: 30000,
-  pingTimeout: 60000,
-  pingInterval: 25000,
-  connectTimeout: 45000,
-  // RENDER FREE TIER: Disable compression
-  perMessageDeflate: false,
-  httpCompression: false,
-  // Keep connections alive
-  cookie: false,
-  serveClient: false
-});
-
-const clients = new Map();
-
-io.on("connection", (socket) => {
-  console.log("✅ Socket connected:", socket.id, "Transport:", socket.conn.transport.name);
-  clients.set(socket.id, socket);
-
-  socket.join("analytics");
-  socket.join("chatbot");
-
-  socket.conn.on("upgrade", (transport) => {
-    console.log("⬆️ Socket upgraded to:", transport.name);
-  });
-
-  socket.on("disconnect", (reason) => {
-    console.log("🔌 Socket disconnected:", socket.id, "-", reason);
-    clients.delete(socket.id);
-  });
-
-  socket.on("error", (error) => {
-    console.error("❌ Socket error:", socket.id, error.message);
-    clients.delete(socket.id);
-  });
-});
-
-app.set("io", io);
-
-// ========================================
 // Middleware
 // ========================================
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -152,7 +85,6 @@ app.get("/api/health", (req, res) => {
   res.json({ 
     status: "OK", 
     database: "PostgreSQL",
-    socketConnections: clients.size,
     timestamp: new Date().toISOString() 
   });
 });
@@ -187,8 +119,7 @@ app.use(
 app.get("/", (req, res) => {
   res.json({ 
     message: "Portfolio Backend API",
-    status: "Running",
-    socketConnections: clients.size
+    status: "Running"
   });
 });
 
@@ -224,13 +155,13 @@ const initializeServer = async () => {
 
 initializeServer()
   .then(() => {
-    server.listen(PORT, '0.0.0.0', () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`
 ╔═══════════════════════════════════════════╗
 ║     🚀 Server Running on Port ${PORT}        ║
 ╠═══════════════════════════════════════════╣
-║  Socket Connections: ${clients.size}                      
-║  Database: PostgreSQL                     
+║  Database: PostgreSQL                     ║
+║  Mode: REST API                           ║
 ╚═══════════════════════════════════════════╝
       `);
     });
@@ -240,17 +171,9 @@ initializeServer()
     process.exit(1);
   });
 
-// Keep server alive on Render free tier
-setInterval(() => {
-  console.log(`💓 Keepalive - ${clients.size} socket(s) connected`);
-}, 50000);
-
 process.on('SIGTERM', () => {
   console.log('🔴 SIGTERM received, shutting down...');
-  server.close(() => {
-    console.log('✅ Server closed');
-    process.exit(0);
-  });
+  process.exit(0);
 });
 
 export default app;

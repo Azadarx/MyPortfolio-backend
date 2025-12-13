@@ -10,13 +10,10 @@ import { isAuthenticated, isAdmin } from "../middleware/middleware.js";
 
 const router = express.Router();
 
-// Enable __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ==========================
 // Multer Storage for Skills
-// ==========================
 const skillStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = path.join(__dirname, "..", "Uploads", "skills");
@@ -33,7 +30,7 @@ const skillStorage = multer.diskStorage({
 
 const uploadSkillIcon = multer({
   storage: skillStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {
       return cb(new Error("Only image files allowed!"), false);
@@ -42,16 +39,14 @@ const uploadSkillIcon = multer({
   }
 });
 
-// ======================================
 // Get All Skills
-// ======================================
 router.get("/", async (req, res) => {
   try {
     const skills = await executeQuery("SELECT * FROM skills ORDER BY createdAt DESC");
 
     const formatted = skills.map(s => ({
       ...s,
-      iconUrl: s.iconurl || s.iconUrl // Ensure consistent key
+      iconUrl: s.iconurl || s.iconUrl
     }));
 
     res.status(200).json(formatted);
@@ -61,10 +56,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ======================================
 // Add New Skill
-// ======================================
-// ADDED uploadSkillIcon.single("iconFile") middleware
 router.post("/", isAuthenticated, isAdmin, uploadSkillIcon.single("iconFile"), async (req, res) => {
   try {
     const { name, level, category } = req.body;
@@ -74,7 +66,7 @@ router.post("/", isAuthenticated, isAdmin, uploadSkillIcon.single("iconFile"), a
     }
 
     let iconUrl = null;
-    if (req.file) { // Use uploaded file if present
+    if (req.file) {
       iconUrl = `/Uploads/skills/${req.file.filename}`;
     }
 
@@ -92,9 +84,6 @@ router.post("/", isAuthenticated, isAdmin, uploadSkillIcon.single("iconFile"), a
       createdAt: result[0].createdAt,
     };
 
-    const io = req.app.get("io");
-    if (io) io.emit("skillAdded", newSkill);
-
     res.status(201).json(newSkill);
   } catch (error) {
     console.error("Error adding new skill:", error);
@@ -102,15 +91,11 @@ router.post("/", isAuthenticated, isAdmin, uploadSkillIcon.single("iconFile"), a
   }
 });
 
-// ======================================
 // Update Skill
-// ======================================
-// ADDED uploadSkillIcon.single("iconFile") middleware
 router.put("/:id", isAuthenticated, isAdmin, uploadSkillIcon.single("iconFile"), async (req, res) => {
   try {
     const skillId = req.params.id;
-    // iconUrl is passed from the form if no new file is selected, or it's empty if cleared
-    const { name, level, category, iconUrl: existingIconUrl } = req.body; 
+    const { name, level, category, iconUrl: existingIconUrl } = req.body;
 
     if (!name || !level || !category) {
       return res.status(400).json({ message: "Name, level, and category are required" });
@@ -125,20 +110,17 @@ router.put("/:id", isAuthenticated, isAdmin, uploadSkillIcon.single("iconFile"),
 
     let finalIconUrl = existingIconUrl || null;
 
-    if (req.file) { // Case 1: New file uploaded
+    if (req.file) {
       finalIconUrl = `/Uploads/skills/${req.file.filename}`;
-      // Delete old file if it exists
       if (oldIconPath && fs.existsSync(oldIconPath)) {
         fs.unlinkSync(oldIconPath);
       }
-    } else if (!existingIconUrl && oldIconPath) { // Case 2: No new file, but existing URL was cleared (finalIconUrl is null)
+    } else if (!existingIconUrl && oldIconPath) {
       finalIconUrl = null;
-      // Delete old file
       if (fs.existsSync(oldIconPath)) {
         fs.unlinkSync(oldIconPath);
       }
     }
-    // Case 3: No new file, existingIconUrl is passed and not cleared (finalIconUrl = existingIconUrl)
 
     const updateQuery = `
       UPDATE skills
@@ -157,9 +139,6 @@ router.put("/:id", isAuthenticated, isAdmin, uploadSkillIcon.single("iconFile"),
       updatedAt: new Date()
     };
 
-    const io = req.app.get("io");
-    if (io) io.emit("skillUpdated", updatedSkill);
-
     res.status(200).json(updatedSkill);
   } catch (error) {
     console.error("Error updating skill:", error);
@@ -167,9 +146,7 @@ router.put("/:id", isAuthenticated, isAdmin, uploadSkillIcon.single("iconFile"),
   }
 });
 
-// ======================================
 // Delete Skill
-// ======================================
 router.delete("/:id", isAuthenticated, isAdmin, async (req, res) => {
   try {
     const skillId = req.params.id;
@@ -181,7 +158,6 @@ router.delete("/:id", isAuthenticated, isAdmin, async (req, res) => {
 
     const skill = skills[0];
 
-    // Delete icon file
     if (skill.iconurl) {
       const iconPath = path.join(
         __dirname,
@@ -194,9 +170,6 @@ router.delete("/:id", isAuthenticated, isAdmin, async (req, res) => {
     }
 
     await executeQuery("DELETE FROM skills WHERE id=$1", [skillId]);
-
-    const io = req.app.get("io");
-    if (io) io.emit("skillDeleted", { id: skillId });
 
     res.status(200).json({ message: "Skill deleted successfully", id: skillId });
   } catch (error) {

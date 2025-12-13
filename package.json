@@ -15,11 +15,8 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.0",
     "multer": "1.4.5-lts.1",
-    "pg": "^8.11.3",
     "nodemailer": "^6.9.15",
-    "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1",
-    "uuid": "^9.0.0",
-    "ws": "^8.18.2"
+    "pg": "^8.11.3",
+    "uuid": "^9.0.0"
   }
 }

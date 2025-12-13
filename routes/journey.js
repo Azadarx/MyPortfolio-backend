@@ -1,4 +1,3 @@
-// routes/journey.js
 import express from 'express';
 import { executeQuery } from '../server/db.js';
 import { isAuthenticated, isAdmin } from '../middleware/middleware.js';
@@ -81,12 +80,6 @@ router.post('/', isAuthenticated, isAdmin, async (req, res) => {
       created_at: new Date()
     };
     
-    // Emit real-time update
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('journey_added', newItem);
-    }
-    
     res.status(201).json(newItem);
   } catch (error) {
     console.error('Journey creation error:', error);
@@ -129,12 +122,6 @@ router.put('/:id', isAuthenticated, isAdmin, async (req, res) => {
       updated_at: new Date()
     };
     
-    // Emit real-time update
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('journey_updated', updatedItem);
-    }
-    
     res.json(updatedItem);
   } catch (error) {
     console.error('Journey update error:', error);
@@ -152,12 +139,6 @@ router.delete('/:id', isAuthenticated, isAdmin, async (req, res) => {
     
     await executeQuery('DELETE FROM journey_items WHERE id = $1', [id]);
     
-    // Emit real-time update
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('journey_deleted', { id });
-    }
-    
     res.json({ message: 'Journey item deleted successfully', id });
   } catch (error) {
     console.error('Journey deletion error:', error);
@@ -169,23 +150,3 @@ router.delete('/:id', isAuthenticated, isAdmin, async (req, res) => {
 });
 
 export default router;
-
-// Add this SQL to your db.js initDatabase function:
-/*
-CREATE TABLE IF NOT EXISTS journey_items (
-  id SERIAL PRIMARY KEY,
-  title VARCHAR(255) NOT NULL,
-  company VARCHAR(255) NOT NULL,
-  description TEXT,
-  start_date DATE NOT NULL,
-  end_date DATE,
-  type VARCHAR(50) NOT NULL CHECK (type IN ('education', 'work', 'project', 'achievement')),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TRIGGER update_journey_items_updated_at
-BEFORE UPDATE ON journey_items
-FOR EACH ROW
-EXECUTE FUNCTION update_updated_at_column();
-*/

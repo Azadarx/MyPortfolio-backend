@@ -10,7 +10,6 @@ import { isAuthenticated, isAdmin } from '../middleware/middleware.js';
 
 const router = express.Router();
 
-// Get __dirname for ES6 modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -31,7 +30,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('Only image files are allowed!'), false);
@@ -50,7 +49,7 @@ router.get('/', async (req, res) => {
     }
     const formattedProjects = projects.map(project => ({
       ...project,
-      imageUrl: project.imageurl || project.imageUrl, // Handle both cases
+      imageUrl: project.imageurl || project.imageUrl,
       technologies: typeof project.technologies === 'string'
         ? project.technologies.split(',').map(tech => tech.trim())
         : project.technologies || []
@@ -70,7 +69,7 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Project not found' });
     }
     const project = projects[0];
-    project.imageUrl = project.imageurl || project.imageUrl; // Handle both cases
+    project.imageUrl = project.imageurl || project.imageUrl;
     project.technologies = typeof project.technologies === 'string'
       ? project.technologies.split(',').map(tech => tech.trim())
       : project.technologies || [];
@@ -111,12 +110,6 @@ router.post('/', isAuthenticated, isAdmin, upload.single('projectImage'), async 
       createdAt: result[0].createdat
     };
     
-    // Emit real-time update
-    const io = req.app.get('io');
-    if (io && io.emit) {
-      io.emit('projectAdded', newProject);
-    }
-    
     res.status(201).json(newProject);
   } catch (error) {
     console.error('Error creating project:', error.message, error.stack);
@@ -142,7 +135,6 @@ router.put('/:id', isAuthenticated, isAdmin, upload.single('projectImage'), asyn
     
     let imageUrl = existingProject.imageurl;
     if (req.file) {
-      // Delete old image if it exists
       if (existingProject.imageurl) {
         const oldImagePath = path.join(__dirname, '..', 'Uploads', 'projects', path.basename(existingProject.imageurl));
         if (fs.existsSync(oldImagePath)) {
@@ -169,12 +161,6 @@ router.put('/:id', isAuthenticated, isAdmin, upload.single('projectImage'), asyn
       updatedAt: new Date()
     };
     
-    // Emit real-time update
-    const io = req.app.get('io');
-    if (io && io.emit) {
-      io.emit('projectUpdated', updatedProject);
-    }
-    
     res.status(200).json(updatedProject);
   } catch (error) {
     console.error('Error updating project:', error.message, error.stack);
@@ -195,18 +181,11 @@ router.delete('/:id', isAuthenticated, isAdmin, async (req, res) => {
     
     await executeQuery('DELETE FROM projects WHERE id = $1', [projectId]);
     
-    // Delete associated image file
     if (project.imageurl) {
       const imagePath = path.join(__dirname, '..', 'Uploads', 'projects', path.basename(project.imageurl));
       if (fs.existsSync(imagePath)) {
         fs.unlinkSync(imagePath);
       }
-    }
-    
-    // Emit real-time update
-    const io = req.app.get('io');
-    if (io && io.emit) {
-      io.emit('projectDeleted', { id: projectId });
     }
     
     res.status(200).json({ message: 'Project deleted successfully', id: projectId });
