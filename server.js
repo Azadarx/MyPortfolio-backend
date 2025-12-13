@@ -1,4 +1,3 @@
-// server.js - Clean REST API without Socket.IO
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -28,44 +27,62 @@ import journeyRoutes from "./routes/journey.js";
 const app = express();
 
 // ========================================
-// CORS Configuration
+// CORS Configuration - UPDATED FOR VERCEL
 // ========================================
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
-  .split(",")
-  .map(o => o.trim())
-  .filter(Boolean);
-
-if (allowedOrigins.length === 0) {
-  allowedOrigins.push(
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'https://syedazadarhussayn.vercel.app'
-  );
-}
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://syedazadarhussayn.vercel.app'
+];
 
 console.log('🌐 Allowed CORS Origins:', allowedOrigins);
 
 const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-
-    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+    // Allow requests with no origin (mobile apps, Postman, curl)
+    if (!origin) {
+      console.log('✅ Allowing request with no origin');
       return callback(null, true);
     }
-
+    
+    // Check exact match
+    if (allowedOrigins.includes(origin)) {
+      console.log('✅ Allowed origin:', origin);
+      return callback(null, true);
+    }
+    
+    // Allow all Vercel preview deployments
+    if (origin.endsWith('.vercel.app')) {
+      console.log('✅ Allowed Vercel preview:', origin);
+      return callback(null, true);
+    }
+    
     console.log("❌ Blocked origin:", origin);
     callback(new Error(`Origin ${origin} not allowed by CORS`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
   preflightContinue: false,
   optionsSuccessStatus: 204
 };
 
+// Apply CORS middleware
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
+
+// Add headers middleware for additional CORS support
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app'))) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  next();
+});
 
 // ========================================
 // Middleware
@@ -73,22 +90,38 @@ app.options("*", cors(corsOptions));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
+// Request logging
 app.use((req, res, next) => {
-  console.log(`📨 ${req.method} ${req.path}`);
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] 📨 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'none'}`);
   next();
 });
 
 // ========================================
-// Mount Routes
+// Health Check Route (before other routes)
 // ========================================
+app.get("/", (req, res) => {
+  res.json({ 
+    message: "Portfolio Backend API",
+    status: "Running",
+    version: "1.0.0",
+    timestamp: new Date().toISOString()
+  });
+});
+
 app.get("/api/health", (req, res) => {
   res.json({ 
     status: "OK", 
     database: "PostgreSQL",
-    timestamp: new Date().toISOString() 
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
   });
 });
 
+// ========================================
+// Mount API Routes
+// ========================================
 app.use("/api/auth", authRouter);
 app.use("/api/projects", projectRoutes);
 app.use("/api/skills", skillsRoutes);
@@ -100,26 +133,38 @@ app.use("/api/chatbot", chatbotRoutes);
 app.use("/api/journey", journeyRoutes);
 
 // ========================================
-// Static Files
+// Static Files - UPDATED FOR CROSS-ORIGIN
 // ========================================
 app.use(
   "/Uploads",
   express.static(path.join(__dirname, "Uploads"), {
     fallthrough: true,
-    setHeaders: (res) => {
-      res.setHeader("Cache-Control", "public, max-age=31536000");
+    setHeaders: (res, filePath) => {
+      // Allow cross-origin access to uploaded files
       res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Cache-Control", "public, max-age=31536000");
+      
+      // Set correct content type
+      if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
+        res.setHeader("Content-Type", "image/jpeg");
+      } else if (filePath.endsWith('.png')) {
+        res.setHeader("Content-Type", "image/png");
+      } else if (filePath.endsWith('.gif')) {
+        res.setHeader("Content-Type", "image/gif");
+      } else if (filePath.endsWith('.webp')) {
+        res.setHeader("Content-Type", "image/webp");
+      }
     },
   })
 );
 
-// ========================================
-// Root Route
-// ========================================
-app.get("/", (req, res) => {
-  res.json({ 
-    message: "Portfolio Backend API",
-    status: "Running"
+// Fallback for missing uploads
+app.use("/Uploads/*", (req, res) => {
+  console.log("⚠️ File not found:", req.path);
+  res.status(404).json({ 
+    message: "File not found",
+    path: req.path 
   });
 });
 
@@ -127,12 +172,15 @@ app.get("/", (req, res) => {
 // Error Handlers
 // ========================================
 app.use("/api/*", (req, res) => {
+  console.log("⚠️ API endpoint not found:", req.path);
   res.status(404).json({ 
     message: "API endpoint not found",
-    path: req.path
+    path: req.path,
+    method: req.method
   });
 });
 
+// Global error handler
 app.use(errorHandler);
 
 // ========================================
@@ -142,13 +190,18 @@ const PORT = process.env.PORT || 5000;
 
 const initializeServer = async () => {
   try {
+    console.log('🔄 Initializing database...');
     await initDatabase();
-    console.log("✅ Database initialized");
+    console.log("✅ Database initialized successfully");
     
+    console.log('🔄 Setting up admin user...');
     await createInitialAdmin();
     console.log("✅ Admin user ready");
+    
+    return true;
   } catch (error) {
     console.error("❌ Database initialization failed:", error.message);
+    console.error("Stack trace:", error.stack);
     throw error;
   }
 };
@@ -160,10 +213,24 @@ initializeServer()
 ╔═══════════════════════════════════════════╗
 ║     🚀 Server Running on Port ${PORT}        ║
 ╠═══════════════════════════════════════════╣
-║  Database: PostgreSQL                     ║
-║  Mode: REST API                           ║
+║  Database: PostgreSQL ✅                  ║
+║  CORS: Enabled for Vercel ✅              ║
+║  Static Files: /Uploads ✅                ║
+║  Health Check: /api/health ✅             ║
 ╚═══════════════════════════════════════════╝
       `);
+      
+      console.log('\n📋 Available Routes:');
+      console.log('  GET  /api/health');
+      console.log('  POST /api/auth/login');
+      console.log('  GET  /api/skills');
+      console.log('  GET  /api/projects');
+      console.log('  GET  /api/journey');
+      console.log('  GET  /api/stats/github');
+      console.log('  POST /api/contact');
+      console.log('\n🌐 Accepting connections from:');
+      allowedOrigins.forEach(origin => console.log(`  - ${origin}`));
+      console.log('  - *.vercel.app (all Vercel deployments)\n');
     });
   })
   .catch((error) => {
@@ -171,8 +238,14 @@ initializeServer()
     process.exit(1);
   });
 
+// Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('🔴 SIGTERM received, shutting down...');
+  console.log('🔴 SIGTERM received, shutting down gracefully...');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('🔴 SIGINT received, shutting down gracefully...');
   process.exit(0);
 });
 
