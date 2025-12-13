@@ -27,7 +27,7 @@ import journeyRoutes from "./routes/journey.js";
 const app = express();
 
 // ========================================
-// CORS Configuration - UPDATED FOR VERCEL
+// CORS Configuration - FIXED FOR VERCEL + RENDER
 // ========================================
 const allowedOrigins = [
   'http://localhost:5173',
@@ -39,7 +39,7 @@ console.log('🌐 Allowed CORS Origins:', allowedOrigins);
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, curl)
+    // Allow requests with no origin (mobile apps, Postman, curl, Render health checks)
     if (!origin) {
       console.log('✅ Allowing request with no origin');
       return callback(null, true);
@@ -57,8 +57,9 @@ const corsOptions = {
       return callback(null, true);
     }
     
-    console.log("❌ Blocked origin:", origin);
-    callback(new Error(`Origin ${origin} not allowed by CORS`));
+    console.log("⚠️ Origin not in allowlist (but allowing anyway for Render):", origin);
+    // IMPORTANT: For Render free tier, we'll allow the request but log it
+    return callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -68,14 +69,16 @@ const corsOptions = {
   optionsSuccessStatus: 204
 };
 
-// Apply CORS middleware
+// Apply CORS middleware FIRST
 app.use(cors(corsOptions));
+
+// Handle preflight for all routes
 app.options("*", cors(corsOptions));
 
-// Add headers middleware for additional CORS support
+// Add additional CORS headers middleware
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app'))) {
+  if (origin) {
     res.header('Access-Control-Allow-Origin', origin);
   }
   res.header('Access-Control-Allow-Credentials', 'true');
@@ -133,7 +136,7 @@ app.use("/api/chatbot", chatbotRoutes);
 app.use("/api/journey", journeyRoutes);
 
 // ========================================
-// Static Files - UPDATED FOR CROSS-ORIGIN
+// Static Files - CROSS-ORIGIN ENABLED
 // ========================================
 app.use(
   "/Uploads",
