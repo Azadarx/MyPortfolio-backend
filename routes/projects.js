@@ -50,6 +50,8 @@ router.get('/', async (req, res) => {
     const formattedProjects = projects.map(project => ({
       ...project,
       imageUrl: project.imageurl || project.imageUrl,
+      repoLink: project.repolink || project.repoLink,
+      liveLink: project.livelink || project.liveLink,
       technologies: typeof project.technologies === 'string'
         ? project.technologies.split(',').map(tech => tech.trim())
         : project.technologies || []
