@@ -18,7 +18,6 @@ const transporter = nodemailer.createTransport({
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-const adminEmailTemplate = ({ name, email, subject, message }) => `...`; // keep original markup
 const adminEmailTemplate = ({ name, email, subject, message }) => `
 <!DOCTYPE html>
 <html>
