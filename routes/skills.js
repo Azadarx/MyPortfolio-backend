@@ -44,9 +44,15 @@ router.get("/", async (req, res) => {
   try {
     const skills = await executeQuery("SELECT * FROM skills ORDER BY createdAt DESC");
 
+    // PostgreSQL returns lowercase column names, so map iconurl -> iconUrl
     const formatted = skills.map(s => ({
-      ...s,
-      iconUrl: s.iconurl || s.iconUrl
+      id: s.id,
+      name: s.name,
+      level: s.level,
+      category: s.category,
+      iconUrl: s.iconurl, // PostgreSQL returns as 'iconurl'
+      createdAt: s.createdat,
+      updatedAt: s.updatedat
     }));
 
     res.status(200).json(formatted);
