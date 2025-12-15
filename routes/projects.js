@@ -50,6 +50,7 @@ router.get('/', async (req, res) => {
     const formattedProjects = projects.map(project => ({
       ...project,
       imageUrl: project.imageurl || project.imageUrl,
+      cloudinary_public_id: project.cloudinary_public_id,
       repoLink: project.repolink || project.repoLink,
       liveLink: project.livelink || project.liveLink,
       technologies: typeof project.technologies === 'string'
@@ -72,6 +73,7 @@ router.get('/:id', async (req, res) => {
     }
     const project = projects[0];
     project.imageUrl = project.imageurl || project.imageUrl;
+    project.cloudinary_public_id = project.cloudinary_public_id;
     project.technologies = typeof project.technologies === 'string'
       ? project.technologies.split(',').map(tech => tech.trim())
       : project.technologies || [];
