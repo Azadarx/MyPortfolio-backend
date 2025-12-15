@@ -91,14 +91,25 @@ router.post('/', isAuthenticated, isAdmin, upload.single('projectImage'), async 
     }
     
     let imageUrl = null;
-  if (req.file) {
-    // Store without leading slash
-    imageUrl = `Uploads/projects/${req.file.filename}`;
-  }
+    let cloudinaryPublicId = null;
+    
+    // Upload to Cloudinary if image exists
+    if (req.file) {
+      const { uploadToCloudinary } = await import('../config/cloudinary.js');
+      const uploadResult = await uploadToCloudinary(req.file.path, 'portfolio/projects');
+      imageUrl = uploadResult.url;
+      cloudinaryPublicId = uploadResult.publicId;
+      
+      // Delete local file after upload
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+    }
+    
     const techString = Array.isArray(technologies) ? technologies.join(',') : technologies;
     const result = await executeQuery(
-      'INSERT INTO projects (title, description, technologies, repolink, livelink, imageurl) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, createdat',
-      [title, description, techString, repoLink || null, liveLink || null, imageUrl]
+      'INSERT INTO projects (title, description, technologies, repolink, livelink, imageurl, cloudinary_public_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, createdat',
+      [title, description, techString, repoLink || null, liveLink || null, imageUrl, cloudinaryPublicId]
     );
     
     const newProject = {
@@ -115,9 +126,15 @@ router.post('/', isAuthenticated, isAdmin, upload.single('projectImage'), async 
     res.status(201).json(newProject);
   } catch (error) {
     console.error('Error creating project:', error.message, error.stack);
+    
+    // Clean up uploaded file on error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    
     res.status(500).json({ message: 'Server error while creating project', error: error.message });
   }
-});
+}); 
 
 // Update a project (admin only)
 router.put('/:id', isAuthenticated, isAdmin, upload.single('projectImage'), async (req, res) => {
@@ -136,21 +153,32 @@ router.put('/:id', isAuthenticated, isAdmin, upload.single('projectImage'), asyn
     const existingProject = existingProjects[0];
     
     let imageUrl = existingProject.imageurl;
+    let cloudinaryPublicId = existingProject.cloudinary_public_id;
+    
+    // Upload new image to Cloudinary if provided
     if (req.file) {
-    if (existingProject.imageurl) {
-      const oldImagePath = path.join(__dirname, '..', 'Uploads', 'projects', path.basename(existingProject.imageurl));
-      if (fs.existsSync(oldImagePath)) {
-        fs.unlinkSync(oldImagePath);
+      const { uploadToCloudinary, deleteFromCloudinary } = await import('../config/cloudinary.js');
+      
+      // Delete old image from Cloudinary
+      if (existingProject.cloudinary_public_id) {
+        await deleteFromCloudinary(existingProject.cloudinary_public_id);
       }
-    }
-    // Store without leading slash
-      imageUrl = `Uploads/projects/${req.file.filename}`;
+      
+      // Upload new image
+      const uploadResult = await uploadToCloudinary(req.file.path, 'portfolio/projects');
+      imageUrl = uploadResult.url;
+      cloudinaryPublicId = uploadResult.publicId;
+      
+      // Delete local file after upload
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
     }
     
     const techString = Array.isArray(technologies) ? technologies.join(',') : technologies;
     await executeQuery(
-      'UPDATE projects SET title = $1, description = $2, technologies = $3, repolink = $4, livelink = $5, imageurl = $6 WHERE id = $7',
-      [title, description, techString, repoLink || null, liveLink || null, imageUrl, projectId]
+      'UPDATE projects SET title = $1, description = $2, technologies = $3, repolink = $4, livelink = $5, imageurl = $6, cloudinary_public_id = $7 WHERE id = $8',
+      [title, description, techString, repoLink || null, liveLink || null, imageUrl, cloudinaryPublicId, projectId]
     );
     
     const updatedProject = {
@@ -167,6 +195,12 @@ router.put('/:id', isAuthenticated, isAdmin, upload.single('projectImage'), asyn
     res.status(200).json(updatedProject);
   } catch (error) {
     console.error('Error updating project:', error.message, error.stack);
+    
+    // Clean up uploaded file on error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    
     res.status(500).json({ message: 'Server error while updating project', error: error.message });
   }
 });
@@ -182,14 +216,13 @@ router.delete('/:id', isAuthenticated, isAdmin, async (req, res) => {
     }
     const project = projects[0];
     
-    await executeQuery('DELETE FROM projects WHERE id = $1', [projectId]);
-    
-    if (project.imageurl) {
-      const imagePath = path.join(__dirname, '..', 'Uploads', 'projects', path.basename(project.imageurl));
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
-      }
+    // Delete from Cloudinary if public_id exists
+    if (project.cloudinary_public_id) {
+      const { deleteFromCloudinary } = await import('../config/cloudinary.js');
+      await deleteFromCloudinary(project.cloudinary_public_id);
     }
+    
+    await executeQuery('DELETE FROM projects WHERE id = $1', [projectId]);
     
     res.status(200).json({ message: 'Project deleted successfully', id: projectId });
   } catch (error) {
@@ -197,5 +230,4 @@ router.delete('/:id', isAuthenticated, isAdmin, async (req, res) => {
     res.status(500).json({ message: 'Server error while deleting project', error: error.message });
   }
 });
-
 export default router;

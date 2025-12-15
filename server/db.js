@@ -130,20 +130,21 @@ const initDatabase = async () => {
     `);
 
     // Create projects table
-    console.log('Creating projects table...');
-    await executeQuery(`
-      CREATE TABLE IF NOT EXISTS projects (
-        id SERIAL PRIMARY KEY,
-        title VARCHAR(255) NOT NULL,
-        description TEXT NOT NULL,
-        technologies TEXT NOT NULL,
-        repoLink VARCHAR(255),
-        liveLink VARCHAR(255),
-        imageUrl VARCHAR(255),
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+console.log('Creating projects table...');
+await executeQuery(`
+  CREATE TABLE IF NOT EXISTS projects (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    technologies TEXT NOT NULL,
+    repoLink VARCHAR(255),
+    liveLink VARCHAR(255),
+    imageUrl VARCHAR(500),
+    cloudinary_public_id VARCHAR(255),
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )
+`);
 
     await executeQuery(`DROP TRIGGER IF EXISTS update_projects_updated_at ON projects`);
     await executeQuery(`
