@@ -89,10 +89,10 @@ router.post('/', isAuthenticated, isAdmin, upload.single('projectImage'), async 
     }
     
     let imageUrl = null;
-    if (req.file) {
-      imageUrl = `/Uploads/projects/${req.file.filename}`;
-    }
-    
+  if (req.file) {
+    // Store without leading slash
+    imageUrl = `Uploads/projects/${req.file.filename}`;
+  }
     const techString = Array.isArray(technologies) ? technologies.join(',') : technologies;
     const result = await executeQuery(
       'INSERT INTO projects (title, description, technologies, repolink, livelink, imageurl) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, createdat',
@@ -135,13 +135,14 @@ router.put('/:id', isAuthenticated, isAdmin, upload.single('projectImage'), asyn
     
     let imageUrl = existingProject.imageurl;
     if (req.file) {
-      if (existingProject.imageurl) {
-        const oldImagePath = path.join(__dirname, '..', 'Uploads', 'projects', path.basename(existingProject.imageurl));
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
-        }
+    if (existingProject.imageurl) {
+      const oldImagePath = path.join(__dirname, '..', 'Uploads', 'projects', path.basename(existingProject.imageurl));
+      if (fs.existsSync(oldImagePath)) {
+        fs.unlinkSync(oldImagePath);
       }
-      imageUrl = `/Uploads/projects/${req.file.filename}`;
+    }
+    // Store without leading slash
+      imageUrl = `Uploads/projects/${req.file.filename}`;
     }
     
     const techString = Array.isArray(technologies) ? technologies.join(',') : technologies;
