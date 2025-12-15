@@ -9,7 +9,7 @@ const router = express.Router();
 // Get GitHub stats
 router.get('/github', async (req, res) => {
   try {
-    const username = 'syedazadarhussayn'; // Replace with your GitHub username or get from env
+    const username = process.env.GITHUB_USERNAME || 'azadarx'; // Your actual GitHub username
     const token = process.env.GITHUB_TOKEN;
 
     if (!token) {
@@ -105,11 +105,11 @@ router.get('/github', async (req, res) => {
     
     // Try to return cached data
     try {
+      const username = process.env.GITHUB_USERNAME || 'azadarx';
       const cached = await executeQuery(
         'SELECT * FROM github_stats WHERE username = $1',
-        ['syedazadarhussayn']
+        [username]
       );
-      
       if (cached && cached.length > 0) {
         console.log('Returning cached GitHub stats');
         const cachedData = cached[0];
