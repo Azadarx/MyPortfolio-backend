@@ -83,5 +83,51 @@ export const extractPublicId = (url) => {
     return null;
   }
 };
+/**
+ * Get optimized Cloudinary URL for products
+ * @param {string} publicId - Cloudinary public ID
+ * @param {object} options - Transformation options
+ * @returns {string} - Optimized URL
+ */
+export const getOptimizedUrl = (publicId, options = {}) => {
+  const {
+    width = 600,
+    height = 600,
+    quality = 'auto:good',
+    format = 'auto'
+  } = options;
+
+  return cloudinary.url(publicId, {
+    transformation: [
+      { width, height, crop: 'limit' },
+      { quality },
+      { fetch_format: format },
+      { flags: 'progressive' } // Progressive loading
+    ],
+    secure: true
+  });
+};
+
+/**
+ * Get thumbnail URL (for cards)
+ */
+export const getThumbnailUrl = (publicId) => {
+  return getOptimizedUrl(publicId, {
+    width: 400,
+    height: 400,
+    quality: 'auto:low'
+  });
+};
+
+/**
+ * Get full-size URL (for modals)
+ */
+export const getFullSizeUrl = (publicId) => {
+  return getOptimizedUrl(publicId, {
+    width: 1200,
+    height: 1200,
+    quality: 'auto:best'
+  });
+};
 
 export default cloudinary;

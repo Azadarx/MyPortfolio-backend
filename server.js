@@ -26,15 +26,18 @@ import journeyRoutes from "./routes/journey.js";
 
 const app = express();
 
-// ========================================
-// CORS Configuration - FIXED FOR VERCEL + RENDER
-// ========================================
+const isProduction = process.env.NODE_ENV === 'production';
+const isDevelopment = !isProduction;
+
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
-  'https://syedazadarhussayn.vercel.app'
-];
+  'http://127.0.0.1:5173',
+  'https://syedazadarhussayn.vercel.app',
+  process.env.FRONTEND_URL
+].filter(Boolean);
 
+console.log('🔧 Environment:', isProduction ? 'PRODUCTION' : 'DEVELOPMENT');
 console.log('🌐 Allowed CORS Origins:', allowedOrigins);
 
 const corsOptions = {
@@ -56,7 +59,11 @@ const corsOptions = {
       console.log('✅ Allowed Vercel preview:', origin);
       return callback(null, true);
     }
-    
+    // In development, allow all localhost variations
+    if (isDevelopment && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+      console.log('✅ Allowed development origin:', origin);
+      return callback(null, true);
+    }
     console.log("⚠️ Origin not in allowlist (but allowing anyway for Render):", origin);
     // IMPORTANT: For Render free tier, we'll allow the request but log it
     return callback(null, true);
